@@ -1,0 +1,160 @@
+﻿@page "/"
+
+@inject HttpClient Http
+@inject ILocalStorageService localStorage
+@rendermode InteractiveServer
+@namespace Homepage
+@using Blazored.LocalStorage;
+<PageTitle>Home</PageTitle>
+
+<h1>FifuxServer Sleep</h1>
+
+@if (currentValue is null)
+{
+    <p>Chargement...</p>
+}
+else
+{
+    @foreach (var value in values)
+    {
+        <button class="@GetButtonClass(value)" @onclick="() => UpdateValue(value)">@value</button>
+        <button class="favorite-button @(IsFavorite(value) ? "active" : "")" @onclick="() => ToggleFavorite(value)">⭐</button>
+    }
+}
+
+@code {
+    private readonly string ESP32_IP = "https://sleep.fifux.be";
+    private readonly List<string> values = new() { "00:15", "00:30", "00:45", "01:00", "01:15", "01:30", "01:45", "02:00" };
+    private string? currentValue;
+    private string? favoriteValue;
+    private bool isInitialized = false;
+    private Dictionary<string, bool> pendingUpdates = new(); // Suivi des mises à jour échouées
+    private CancellationTokenSource retryTokenSource = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        Console.WriteLine("server started");
+        await FetchCurrentValue();
+        _ = RetryFailedUpdates();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !isInitialized)
+        {
+            await LoadFavorite();
+            isInitialized = true;
+            StateHasChanged();
+        }
+    }
+
+    private async Task FetchCurrentValue()
+    {
+        try
+        {
+            currentValue = await Http.GetStringAsync($"{ESP32_IP}/get?id=7");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Erreur de connexion : {ex.Message}");
+        }
+    }
+
+    private async Task UpdateValue(string value)
+    {
+        try
+        {
+            var url = $"{ESP32_IP}/update?id=7&value={value}";
+            Console.WriteLine($"Envoi de la requête : {url}");
+
+            var response = await Http.GetAsync(url);
+
+            if (response.IsSuccessStatusCode)
+            {
+                Console.WriteLine("Mise à jour réussie !");
+                currentValue = value;
+                pendingUpdates.Remove(value);
+                if (value == favoriteValue)
+                {
+                    await SaveFavorite(value);
+                }
+            }
+            else
+            {
+                Console.WriteLine($"Erreur HTTP : {response.StatusCode}");
+                pendingUpdates[value] = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Exception lors de la requête : {ex.Message}");
+            pendingUpdates[value] = true;
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task RetryFailedUpdates()
+    {
+        while (!retryTokenSource.Token.IsCancellationRequested)
+        {
+            if (pendingUpdates.Count > 0)
+            {
+                Console.WriteLine("Tentative de mise à jour des valeurs en échec...");
+                foreach (var value in pendingUpdates.Keys.ToList())
+                {
+                    await UpdateValue(value);
+                }
+            }
+            await Task.Delay(30000);
+        }
+    }
+
+    private string GetButtonClass(string value)
+    {
+        if (pendingUpdates.ContainsKey(value))
+            return "pending";
+        return value == currentValue && !pendingUpdates.ContainsKey(value) ? "active" : "";
+    }
+
+    private bool IsFavorite(string value) => value == favoriteValue;
+
+    private async Task ToggleFavorite(string value)
+    {
+        if (favoriteValue == value)
+        {
+            favoriteValue = null;
+            await localStorage.RemoveItemAsync("favoriteValue");
+        }
+        else
+        {
+            favoriteValue = value;
+            await SaveFavorite(value);
+            await UpdateValue(value);
+        }
+        StateHasChanged();
+    }
+
+    private async Task LoadFavorite()
+    {
+        try
+        {
+            var json = await localStorage.GetItemAsStringAsync("favoriteValue");
+            if (!string.IsNullOrEmpty(json))
+            {
+                favoriteValue = json;
+                await UpdateValue(favoriteValue);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Erreur lors du chargement du favori : {ex.Message}");
+        }
+    }
+
+    private async Task SaveFavorite(string value)
+    {
+        await localStorage.SetItemAsStringAsync("favoriteValue", value);
+    }
+}
+

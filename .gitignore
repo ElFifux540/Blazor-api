@@ -1,0 +1,41 @@
+# Fichiers binaires et compilés
+bin/
+obj/
+
+# Fichiers de publication et de déploiement
+publish/
+wwwroot/
+
+# Fichiers utilisateur et de configuration IDE
+.vscode/
+.idea/
+*.suo
+*.user
+*.vcxproj.user
+*.code-workspace
+
+# Dépendances et packages
+packages/
+npm_modules/
+node_modules/
+
+# Fichiers de logs et temporaires
+*.log
+*.tmp
+
+# Secrets et fichiers sensibles
+secrets.json
+appsettings.*.json
+!appsettings.json
+
+# Fichiers spécifiques à Blazor
+.blazor/
+.Docs/
+
+# Cache et fichiers de sessions
+*.cache
+*.pid
+
+# Fichiers générés par Rider ou Resharper
+*.sln.iml
+*.DotSettings.user
